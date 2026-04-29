@@ -113,8 +113,14 @@ impl CredsspSequence {
                 Some(config) => {
                     let cert: Certificate = picky_asn1_der::from_bytes(&config.certificate)
                         .map_err(|_e| general_err!("can't parse certificate"))?;
-                    let key = PrivateKey::from_pkcs1(&config.private_key)
-                        .map_err(|_e| general_err!("can't parse private key"))?;
+                    // Try PKCS#8 first (modern PKI engines emit
+                    // this), fall back to PKCS#1 for legacy callers.
+                    // BastionVault's `fix-deps` branch widened this
+                    // because the in-tree PKI engine generates
+                    // PKCS#8 PEM keys.
+                    let key = PrivateKey::from_pkcs8(&config.private_key)
+                        .or_else(|_| PrivateKey::from_pkcs1(&config.private_key))
+                        .map_err(|_e| general_err!("can't parse private key (tried PKCS#8 and PKCS#1)"))?;
                     let identity = sspi::SmartCardIdentity {
                         username: extract_user_principal_name(&cert)
                             .or_else(|| extract_user_name(&cert))
