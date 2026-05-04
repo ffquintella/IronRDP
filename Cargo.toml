@@ -218,4 +218,4 @@ diplomat = { git = "https://github.com/CBenoit/diplomat", rev = "6dc806e80162b6b
 # 26765bb on `sspi-rs` `main` already bumps to picky rc.23 + the
 # stable RustCrypto chain; pinning to that SHA clears the conflict
 # without waiting for the next sspi release.
-sspi = { git = "https://github.com/Devolutions/sspi-rs", rev = "26765bbe1f57f490ba1c37703eda8267c3b2dfb6" }
+sspi = "0.20.1"
