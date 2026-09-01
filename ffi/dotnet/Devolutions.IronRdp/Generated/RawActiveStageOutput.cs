@@ -31,11 +31,14 @@ public partial struct ActiveStageOutput
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_pointer_bitmap", ExactSpelling = true)]
     public static unsafe extern SessionFfiResultBoxDecodedPointerBoxIronRdpError GetPointerBitmap(ActiveStageOutput* self);
 
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_windowing_orders", ExactSpelling = true)]
+    public static unsafe extern SessionFfiResultBoxBytesSliceBoxIronRdpError GetWindowingOrders(ActiveStageOutput* self);
+
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_monitor_layout", ExactSpelling = true)]
+    public static unsafe extern SessionFfiResultBoxMonitorLayoutIteratorBoxIronRdpError GetMonitorLayout(ActiveStageOutput* self);
+
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_terminate", ExactSpelling = true)]
     public static unsafe extern SessionFfiResultBoxGracefulDisconnectReasonBoxIronRdpError GetTerminate(ActiveStageOutput* self);
-
-    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_deactivate_all", ExactSpelling = true)]
-    public static unsafe extern SessionFfiResultBoxConnectionActivationSequenceBoxIronRdpError GetDeactivateAll(ActiveStageOutput* self);
 
     /// <summary>
     /// Returns the multitransport request ID and requested protocol.
@@ -46,6 +49,15 @@ public partial struct ActiveStageOutput
     /// </remarks>
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_multitransport_request", ExactSpelling = true)]
     public static unsafe extern SessionFfiResultMultitransportRequestBoxIronRdpError GetMultitransportRequest(ActiveStageOutput* self);
+
+    /// <summary>
+    /// Connection quality signals from the server's auto-detect mechanism.
+    /// Returns RTT and bandwidth measurements for health monitoring.
+    /// These values will feed into FramePacingFeedback when the
+    /// library-level health observer traits from #1158 land.
+    /// </summary>
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_get_autodetect_network_characteristics", ExactSpelling = true)]
+    public static unsafe extern SessionFfiResultNetworkCharacteristicsBoxIronRdpError GetAutodetectNetworkCharacteristics(ActiveStageOutput* self);
 
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStageOutput_destroy", ExactSpelling = true)]
     public static unsafe extern void Destroy(ActiveStageOutput* self);

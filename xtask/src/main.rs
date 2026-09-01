@@ -12,6 +12,7 @@ mod cli;
 mod features;
 mod ffi;
 mod fuzz;
+mod pr;
 mod prelude;
 mod section;
 mod wasm;
@@ -61,6 +62,8 @@ fn main() -> anyhow::Result<()> {
         Action::CheckFmt => check::fmt(&sh)?,
         Action::CheckLints => check::lints(&sh)?,
         Action::CheckLocks => check::lock_files(&sh)?,
+        Action::CheckDependencies => check::dependencies(&sh)?,
+        Action::CheckTestSettings { base, head } => check::test_settings(&sh, &base, &head)?,
         Action::CheckTests { no_run } => {
             if no_run {
                 check::tests_compile(&sh)?;
@@ -93,6 +96,7 @@ fn main() -> anyhow::Result<()> {
             check::tests_run(&sh)?;
             check::lints(&sh)?;
             features::run_all(&sh)?;
+            check::dependencies(&sh)?;
             wasm::check(&sh)?;
             fuzz::run(&sh, None, None)?;
             web::install(&sh)?;
@@ -100,9 +104,11 @@ fn main() -> anyhow::Result<()> {
             check::lock_files(&sh)?;
         }
         Action::Clean => clean::workspace(&sh)?,
+        Action::PrCheckMessage { event_file } => pr::check_message(event_file.as_deref())?,
         Action::FuzzCorpusFetch => fuzz::corpus_fetch(&sh)?,
         Action::FuzzCorpusMin { target } => fuzz::corpus_minify(&sh, target)?,
         Action::FuzzCorpusPush => fuzz::corpus_push(&sh)?,
+        Action::FuzzCoverage { target } => fuzz::coverage(&sh, target)?,
         Action::FuzzInstall => fuzz::install(&sh)?,
         Action::FuzzList { format } => match format {
             cli::ListFormat::Human => fuzz::list_human()?,

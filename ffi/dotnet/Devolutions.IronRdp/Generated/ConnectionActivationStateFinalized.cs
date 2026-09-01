@@ -31,14 +31,6 @@ public partial class ConnectionActivationStateFinalized: IDisposable
         }
     }
 
-    public ushort IoChannelId
-    {
-        get
-        {
-            return GetIoChannelId();
-        }
-    }
-
     public bool PointerSoftwareRendering
     {
         get
@@ -55,11 +47,19 @@ public partial class ConnectionActivationStateFinalized: IDisposable
         }
     }
 
-    public ushort UserChannelId
+    public nuint StaticChannelChunkSize
     {
         get
         {
-            return GetUserChannelId();
+            return GetStaticChannelChunkSize();
+        }
+    }
+
+    public sbyte WindowSupportLevel
+    {
+        get
+        {
+            return GetWindowSupportLevel();
         }
     }
 
@@ -75,32 +75,6 @@ public partial class ConnectionActivationStateFinalized: IDisposable
     public unsafe ConnectionActivationStateFinalized(Raw.ConnectionActivationStateFinalized* handle)
     {
         _inner = handle;
-    }
-
-    public ushort GetIoChannelId()
-    {
-        unsafe
-        {
-            if (_inner == null)
-            {
-                throw new ObjectDisposedException("ConnectionActivationStateFinalized");
-            }
-            ushort retVal = Raw.ConnectionActivationStateFinalized.GetIoChannelId(_inner);
-            return retVal;
-        }
-    }
-
-    public ushort GetUserChannelId()
-    {
-        unsafe
-        {
-            if (_inner == null)
-            {
-                throw new ObjectDisposedException("ConnectionActivationStateFinalized");
-            }
-            ushort retVal = Raw.ConnectionActivationStateFinalized.GetUserChannelId(_inner);
-            return retVal;
-        }
     }
 
     public uint GetShareId()
@@ -154,6 +128,36 @@ public partial class ConnectionActivationStateFinalized: IDisposable
                 throw new ObjectDisposedException("ConnectionActivationStateFinalized");
             }
             bool retVal = Raw.ConnectionActivationStateFinalized.GetPointerSoftwareRendering(_inner);
+            return retVal;
+        }
+    }
+
+    public nuint GetStaticChannelChunkSize()
+    {
+        unsafe
+        {
+            if (_inner == null)
+            {
+                throw new ObjectDisposedException("ConnectionActivationStateFinalized");
+            }
+            nuint retVal = Raw.ConnectionActivationStateFinalized.GetStaticChannelChunkSize(_inner);
+            return retVal;
+        }
+    }
+
+    /// <summary>
+    /// Returns -1 when Window List support was not negotiated, otherwise
+    /// the negotiated Window List support level.
+    /// </summary>
+    public sbyte GetWindowSupportLevel()
+    {
+        unsafe
+        {
+            if (_inner == null)
+            {
+                throw new ObjectDisposedException("ConnectionActivationStateFinalized");
+            }
+            sbyte retVal = Raw.ConnectionActivationStateFinalized.GetWindowSupportLevel(_inner);
             return retVal;
         }
     }

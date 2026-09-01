@@ -61,6 +61,30 @@ public partial class ActiveStage: IDisposable
         }
     }
 
+    /// <summary>
+    /// Produces a fresh connection activation sequence to drive the Deactivation-Reactivation
+    /// Sequence.
+    /// </summary>
+    /// <remarks>
+    /// Call this upon receiving a [`ActiveStageOutputType::DeactivateAll`] output, drive the
+    /// returned sequence until it is finalized, then discard it.
+    /// </remarks>
+    /// <returns>
+    /// A <c>ConnectionActivationSequence</c> allocated on Rust side.
+    /// </returns>
+    public ConnectionActivationSequence CreateConnectionActivation()
+    {
+        unsafe
+        {
+            if (_inner == null)
+            {
+                throw new ObjectDisposedException("ActiveStage");
+            }
+            Raw.ConnectionActivationSequence* retVal = Raw.ActiveStage.CreateConnectionActivation(_inner);
+            return new ConnectionActivationSequence(retVal);
+        }
+    }
+
     /// <exception cref="IronRdpException"></exception>
     /// <returns>
     /// A <c>ActiveStageOutputIterator</c> allocated on Rust side.
@@ -302,6 +326,30 @@ public partial class ActiveStage: IDisposable
                 throw new ObjectDisposedException("ActiveStage");
             }
             Raw.ActiveStage.SetFastpathProcessor(_inner, ioChannelId, userChannelId, shareId, enableServerPointer, pointerSoftwareRendering);
+        }
+    }
+
+    /// <summary>
+    /// Rebuilds active-stage processors for a Deactivation-Reactivation Sequence.
+    /// </summary>
+    /// <remarks>
+    /// This retains negotiated bulk compression and applies the refreshed server-pointer state
+    /// and static channel chunk size.
+    /// </remarks>
+    /// <exception cref="IronRdpException"></exception>
+    public void Reactivate(ushort ioChannelId, ushort userChannelId, uint shareId, bool enableServerPointer, bool pointerSoftwareRendering, nuint staticChannelChunkSize, sbyte windowSupportLevel)
+    {
+        unsafe
+        {
+            if (_inner == null)
+            {
+                throw new ObjectDisposedException("ActiveStage");
+            }
+            Raw.SessionFfiResultVoidBoxIronRdpError result = Raw.ActiveStage.Reactivate(_inner, ioChannelId, userChannelId, shareId, enableServerPointer, pointerSoftwareRendering, staticChannelChunkSize, windowSupportLevel);
+            if (!result.isOk)
+            {
+                throw new IronRdpException(new IronRdpError(result.Err));
+            }
         }
     }
 

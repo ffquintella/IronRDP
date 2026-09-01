@@ -19,6 +19,17 @@ public partial struct ActiveStage
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStage_new", ExactSpelling = true)]
     public static unsafe extern SessionFfiResultBoxActiveStageBoxIronRdpError New(ConnectionResult* connectionResult);
 
+    /// <summary>
+    /// Produces a fresh connection activation sequence to drive the Deactivation-Reactivation
+    /// Sequence.
+    /// </summary>
+    /// <remarks>
+    /// Call this upon receiving a [`ActiveStageOutputType::DeactivateAll`] output, drive the
+    /// returned sequence until it is finalized, then discard it.
+    /// </remarks>
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStage_create_connection_activation", ExactSpelling = true)]
+    public static unsafe extern ConnectionActivationSequence* CreateConnectionActivation(ActiveStage* self);
+
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStage_process", ExactSpelling = true)]
     public static unsafe extern SessionFfiResultBoxActiveStageOutputIteratorBoxIronRdpError Process(ActiveStage* self, DecodedImage* image, Action* action, byte* payload, nuint payloadSz);
 
@@ -45,6 +56,16 @@ public partial struct ActiveStage
 
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStage_set_fastpath_processor", ExactSpelling = true)]
     public static unsafe extern void SetFastpathProcessor(ActiveStage* self, ushort ioChannelId, ushort userChannelId, uint shareId, [MarshalAs(UnmanagedType.U1)] bool enableServerPointer, [MarshalAs(UnmanagedType.U1)] bool pointerSoftwareRendering);
+
+    /// <summary>
+    /// Rebuilds active-stage processors for a Deactivation-Reactivation Sequence.
+    /// </summary>
+    /// <remarks>
+    /// This retains negotiated bulk compression and applies the refreshed server-pointer state
+    /// and static channel chunk size.
+    /// </remarks>
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStage_reactivate", ExactSpelling = true)]
+    public static unsafe extern SessionFfiResultVoidBoxIronRdpError Reactivate(ActiveStage* self, ushort ioChannelId, ushort userChannelId, uint shareId, [MarshalAs(UnmanagedType.U1)] bool enableServerPointer, [MarshalAs(UnmanagedType.U1)] bool pointerSoftwareRendering, nuint staticChannelChunkSize, sbyte windowSupportLevel);
 
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ActiveStage_set_enable_server_pointer", ExactSpelling = true)]
     public static unsafe extern void SetEnableServerPointer(ActiveStage* self, [MarshalAs(UnmanagedType.U1)] bool enableServerPointer);

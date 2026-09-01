@@ -28,38 +28,111 @@ pub enum RdpsndServerMessage {
     Error(Box<dyn RdpsndError>),
 }
 
+/// A server-offered audio format that the client also advertised support for,
+/// paired with the `wFormatNo` the client expects for it on the wire.
+///
+/// The crate computes the set of these — the intersection of the server's
+/// [`get_formats`] and the client's accepted formats — and hands it to
+/// [`RdpsndServerHandler::choose_format`], which returns the one to stream.
+///
+/// `wformat_no` is intentionally private and there is no public constructor:
+/// a handler can neither build nor mutate a `NegotiatedFormat`, so the index
+/// stamped onto every Wave/Wave2 PDU is always a valid position in the
+/// client's own format list. This makes it impossible to emit an out-of-range
+/// `wFormatNo` (which a compliant client rejects, silently dropping all audio
+/// — the classic footgun of the old index-returning API).
+///
+/// [`get_formats`]: RdpsndServerHandler::get_formats
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NegotiatedFormat {
+    /// The negotiated audio format (common to server and client).
+    format: pdu::AudioFormat,
+    /// Position of `format` in the client's Client Audio Formats list — the
+    /// `wFormatNo` the client resolves each wave against. Crate-owned.
+    wformat_no: u16,
+}
+
+impl NegotiatedFormat {
+    /// The negotiated audio format — common to both server and client, and the
+    /// one the returned wave data should match.
+    pub fn format(&self) -> &pdu::AudioFormat {
+        &self.format
+    }
+
+    /// Test-only accessor for the crate-private `wformat_no`, exposed for the
+    /// integration testsuite behind the private `__test` feature. Not a stable API.
+    #[cfg(feature = "__test")]
+    #[doc(hidden)]
+    pub fn wformat_no(&self) -> u16 {
+        self.wformat_no
+    }
+}
+
 /// Handler for the server side of the Audio Output Virtual Channel (`RDPSND`).
 ///
-/// Implementations supply the list of audio formats the server offers, decide
-/// which format to use once the client replies, and produce the audio waves to
-/// stream (via [`RdpsndServer::wave`]).
+/// Implementations supply the list of audio formats the server offers, choose
+/// which negotiated format to use once the client replies, and produce the
+/// audio waves to stream (via [`RdpsndServer::wave`]).
 pub trait RdpsndServerHandler: Send + core::fmt::Debug {
     /// The audio formats the server advertises in the Server Audio Formats and
     /// Version PDU (MS-RDPEA 2.2.2.1).
     fn get_formats(&self) -> &[pdu::AudioFormat];
 
-    /// Called once the client has replied with the formats it accepts
-    /// (`client_format`, the Client Audio Formats and Version PDU). Returns the
-    /// `wFormatNo` to stamp on every subsequent Wave/Wave2 PDU, or [`None`] if
-    /// no offered format is acceptable (no audio is then streamed).
+    /// Select which format to stream, once the client has replied with the
+    /// formats it accepts.
     ///
-    /// **The returned index addresses `client_format.formats` — the formats the
-    /// client just echoed back — NOT the server's own [`get_formats`] list.**
-    /// The client resolves each wave's format as `ClientFormats[wFormatNo]`
-    /// against the list *it* sent, and a compliant client rejects any
-    /// `wFormatNo >= client_format.formats.len()`, silently dropping all audio.
-    /// The client's list is its accepted subset of the server's formats, so the
-    /// two lists generally differ in both length and ordering; an index into
-    /// [`get_formats`] only happens to work when the chosen format sits at the
-    /// same position in both. Pick the format you intend to send, then return
-    /// its position within `client_format.formats`.
+    /// `common` is the set of formats from [`get_formats`] that the client also
+    /// advertised, in the server's preference order; each carries the
+    /// `wFormatNo` the client expects, so the crate — not the handler — owns
+    /// the index arithmetic and the MS-RDPEA rule that `wFormatNo` addresses
+    /// the *client's* list. `common` is never empty: when server and client
+    /// share no format, this method is not called and no audio is streamed.
+    ///
+    /// Return the [`NegotiatedFormat`] to stream (a reference borrowed from
+    /// `common`), or [`None`] to decline. Returning a borrow from `common`
+    /// — rather than an index or a constructed value — makes it impossible to
+    /// pick a format the client did not accept or to produce an invalid
+    /// `wFormatNo`. This is a pure selection step: any encoder/producer setup
+    /// belongs in [`start`], which the crate calls next with the chosen format.
     ///
     /// [`get_formats`]: RdpsndServerHandler::get_formats
-    fn start(&mut self, client_format: &ClientAudioFormatPdu) -> Option<u16>;
+    /// [`start`]: RdpsndServerHandler::start
+    fn choose_format<'a>(&mut self, common: &'a [NegotiatedFormat]) -> Option<&'a NegotiatedFormat>;
+
+    /// Begin streaming with the `format` just selected by [`choose_format`].
+    ///
+    /// Called once per session, immediately after a successful
+    /// [`choose_format`]. This is the lifecycle hook: initialize encoder state,
+    /// spawn the producer, etc. Waves are then emitted via [`RdpsndServer::wave`].
+    ///
+    /// Return `Err` if initialization fails (e.g. the encoder can't be created).
+    /// The crate then **declines the negotiated format** — exactly as if
+    /// [`choose_format`] had returned [`None`] — rather than leaving the channel
+    /// "negotiated" but silently producing no audio. The error is logged by the
+    /// crate.
+    ///
+    /// [`choose_format`]: RdpsndServerHandler::choose_format
+    fn start(&mut self, format: &NegotiatedFormat) -> Result<(), Box<dyn RdpsndError>>;
 
     /// Called when the audio stream is torn down (e.g. the client closed the
     /// channel or the session ended).
     fn stop(&mut self);
+
+    /// Called for every Wave Confirm PDU the client sends.
+    ///
+    /// `timestamp` answers the `wTimeStamp` the server put on the wave with
+    /// this `block_no`. It is not an echo: [\[MS-RDPEA\] 2.2.3.8] sets it to
+    /// that value *plus* the milliseconds between receiving the complete wave
+    /// and sending the confirm, so the difference from the wave's own
+    /// timestamp is the time the client held the data, not a round trip.
+    ///
+    /// One block may be confirmed more than once, with different timestamps.
+    /// The default implementation ignores it.
+    ///
+    /// [\[MS-RDPEA\] 2.2.3.8]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpea/1c67d6d0-4e8b-4e1a-9d3a-cd0d6f0d1c5f
+    fn wave_confirm(&mut self, block_no: u8, timestamp: u16) {
+        let _ = (block_no, timestamp);
+    }
 }
 
 #[derive(Debug, Copy, Clone, PartialEq, Eq)]
@@ -130,24 +203,47 @@ impl RdpsndServer {
             .format_no
             .ok_or_else(|| pdu_other_err!("invalid state - no format"))?;
 
+        // The client answers wTimeStamp in the Wave Confirm PDU, offset by how
+        // long it held the data, so sending zero leaves that measurement no
+        // reference to be relative to. Carry the low bits of the same capture
+        // time the 32-bit dwAudioTimeStamp gets, so both fields describe one
+        // instant.
+        let [timestamp_lo, timestamp_hi, _, _] = ts.to_le_bytes();
+        let wire_timestamp = u16::from_le_bytes([timestamp_lo, timestamp_hi]);
+
         // The server doesn't wait for wave confirm, apparently FreeRDP neither.
         let msg = if version >= pdu::Version::V8 {
             let pdu = pdu::Wave2Pdu {
                 block_no: self.block_no,
-                timestamp: 0,
+                timestamp: wire_timestamp,
                 audio_timestamp: ts,
                 format_no,
                 data: data.into(),
             };
             RdpsndSvcMessages::new(vec![pdu::ServerAudioOutputPdu::Wave2(pdu).into()])
         } else {
-            let pdu = pdu::WavePdu {
+            // Pre-v8: WaveInfo PDU (§2.2.3.3), then a bare Wave payload (§2.2.3.4).
+            if data.len() < usize::from(pdu::WavePdu::MIN_AUDIO_LENGTH) {
+                return Err(pdu_other_err!("wave data shorter than WaveInfo Data prefix"));
+            }
+            // BodySize = 8 + audio_length must fit in the 16-bit RDPSND header field.
+            if data.len() > usize::from(pdu::WavePdu::MAX_AUDIO_LENGTH) {
+                return Err(pdu_other_err!("wave data too large for WaveInfo BodySize"));
+            }
+            let audio_length = u16::try_from(data.len()).map_err(|_| pdu_other_err!("wave data too large"))?;
+            let mut data_prefix = [0u8; 4];
+            data_prefix.copy_from_slice(&data[..4]);
+            let info = pdu::WavePdu {
                 block_no: self.block_no,
                 format_no,
-                timestamp: 0,
-                data: data.into(),
+                timestamp: wire_timestamp,
+                data_prefix,
+                audio_length,
             };
-            RdpsndSvcMessages::new(vec![pdu::ServerAudioOutputPdu::Wave(pdu).into()])
+            let wave_data = pdu::WaveDataPdu {
+                data: data[4..].to_vec(),
+            };
+            RdpsndSvcMessages::new(vec![pdu::ServerAudioOutputPdu::Wave(info).into(), wave_data.into()])
         };
 
         self.block_no = self.block_no.overflowing_add(1).0;
@@ -171,6 +267,32 @@ impl RdpsndServer {
     pub fn close(&mut self) -> PduResult<RdpsndSvcMessages> {
         Ok(RdpsndSvcMessages::new(vec![pdu::ServerAudioOutputPdu::Close.into()]))
     }
+}
+
+/// Build the set of formats common to the server (`server_formats`, kept in the
+/// server's preference order) and the client (`client_formats`), each tagged
+/// with its `wFormatNo` — its index in the *client's* list, which is what the
+/// client resolves waves against (MS-RDPEA). The result mirrors the server's
+/// ordering so the handler can express preference simply by `get_formats`
+/// order, while the `wFormatNo` always points into the client list.
+#[cfg_attr(feature = "__test", visibility::make(pub))]
+fn negotiate_formats(
+    server_formats: &[pdu::AudioFormat],
+    client_formats: &[pdu::AudioFormat],
+) -> Vec<NegotiatedFormat> {
+    server_formats
+        .iter()
+        .filter_map(|server_format| {
+            client_formats
+                .iter()
+                .position(|client_fmt| client_fmt.matches_for_negotiation(server_format))
+                .and_then(|idx| u16::try_from(idx).ok())
+                .map(|wformat_no| NegotiatedFormat {
+                    format: server_format.clone(),
+                    wformat_no,
+                })
+        })
+        .collect()
 }
 
 impl_as_any!(RdpsndServer);
@@ -220,13 +342,41 @@ impl SvcProcessor for RdpsndServer {
                     return Ok(vec![]);
                 };
                 let client_format = self.client_format.as_ref().expect("available in this state");
+                // Formats common to server and client, in the server's
+                // preference order, each tagged with its wFormatNo (its
+                // position in the *client's* list). Keeping this in the crate
+                // means the handler never does index arithmetic and can't emit
+                // an out-of-range wFormatNo.
+                let common = negotiate_formats(self.handler.get_formats(), &client_format.formats);
                 self.state = RdpsndState::Ready;
-                self.format_no = self.handler.start(client_format);
+                if common.is_empty() {
+                    debug!("No audio format in common with the client; audio disabled");
+                } else if let Some(chosen) = self.handler.choose_format(&common) {
+                    // `chosen` borrows `common` (a local), not `self`, so the
+                    // handler is free to borrow `&mut self` again for `start`.
+                    let wformat_no = chosen.wformat_no;
+                    // Commit the index BEFORE the `start` lifecycle hook: if `start`
+                    // spawns a producer that emits a wave immediately, `wave()` must
+                    // already see a valid `format_no` rather than racing an unset one.
+                    self.format_no = Some(wformat_no);
+                    if let Err(e) = self.handler.start(chosen) {
+                        // Initialization failed (e.g. the encoder couldn't be
+                        // created). Roll back to a cleanly *declined* state — the
+                        // same outcome as `choose_format` returning `None` — instead
+                        // of leaving the channel "negotiated" but silently producing
+                        // no audio.
+                        error!(error = %e, "rdpsnd handler failed to start; declining the negotiated format");
+                        self.format_no = None;
+                    }
+                } else {
+                    debug!("Handler declined every common audio format; audio disabled");
+                }
                 vec![]
             }
             RdpsndState::Ready => {
                 if let pdu::ClientAudioOutputPdu::WaveConfirm(c) = pdu {
                     debug!(?c);
+                    self.handler.wave_confirm(c.block_no, c.timestamp);
                 }
                 vec![]
             }

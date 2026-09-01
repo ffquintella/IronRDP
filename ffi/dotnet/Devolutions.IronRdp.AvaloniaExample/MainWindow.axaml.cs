@@ -516,7 +516,7 @@ public partial class MainWindow : Window
                 }
                 else if (output.GetEnumType() == ActiveStageOutputType.DeactivateAll)
                 {
-                    var activationSequence = output.GetDeactivateAll();
+                    var activationSequence = _activeStage!.CreateConnectionActivation();
                     var writeBuf = WriteBuf.New();
                     while (true)
                     {
@@ -527,21 +527,25 @@ public partial class MainWindow : Window
 
                         var finalized = activationSequence.GetState().GetFinalized();
                         var desktopSize = finalized.GetDesktopSize();
-                        var ioChannelId = finalized.GetIoChannelId();
-                        var userChannelId = finalized.GetUserChannelId();
+                        var ioChannelId = activationSequence.GetIoChannelId();
+                        var userChannelId = activationSequence.GetUserChannelId();
                         var shareId = finalized.GetShareId();
                         var enableServerPointer = finalized.GetEnableServerPointer();
                         var pointerSoftwareRendering = finalized.GetPointerSoftwareRendering();
+                        var staticChannelChunkSize = finalized.GetStaticChannelChunkSize();
+                        var windowSupportLevel = finalized.GetWindowSupportLevel();
 
                         _decodedImage = DecodedImage.New(PixelFormat.RgbA32, desktopSize.GetWidth(),
                             desktopSize.GetHeight());
 
-                        _activeStage!.SetFastpathProcessor(
+                        _activeStage!.Reactivate(
                             ioChannelId,
                             userChannelId,
                             shareId,
                             enableServerPointer,
-                            pointerSoftwareRendering
+                            pointerSoftwareRendering,
+                            staticChannelChunkSize,
+                            windowSupportLevel
                         );
 
                         _activeStage.SetEnableServerPointer(enableServerPointer);

@@ -16,12 +16,6 @@ public partial struct ConnectionActivationStateFinalized
 {
     private const string NativeLib = "DevolutionsIronRdp";
 
-    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_get_io_channel_id", ExactSpelling = true)]
-    public static unsafe extern ushort GetIoChannelId(ConnectionActivationStateFinalized* self);
-
-    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_get_user_channel_id", ExactSpelling = true)]
-    public static unsafe extern ushort GetUserChannelId(ConnectionActivationStateFinalized* self);
-
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_get_share_id", ExactSpelling = true)]
     public static unsafe extern uint GetShareId(ConnectionActivationStateFinalized* self);
 
@@ -35,6 +29,16 @@ public partial struct ConnectionActivationStateFinalized
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_get_pointer_software_rendering", ExactSpelling = true)]
     [return: MarshalAs(UnmanagedType.U1)]
     public static unsafe extern bool GetPointerSoftwareRendering(ConnectionActivationStateFinalized* self);
+
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_get_static_channel_chunk_size", ExactSpelling = true)]
+    public static unsafe extern nuint GetStaticChannelChunkSize(ConnectionActivationStateFinalized* self);
+
+    /// <summary>
+    /// Returns -1 when Window List support was not negotiated, otherwise
+    /// the negotiated Window List support level.
+    /// </summary>
+    [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_get_window_support_level", ExactSpelling = true)]
+    public static unsafe extern sbyte GetWindowSupportLevel(ConnectionActivationStateFinalized* self);
 
     [DllImport(NativeLib, CallingConvention = CallingConvention.Cdecl, EntryPoint = "ConnectionActivationStateFinalized_destroy", ExactSpelling = true)]
     public static unsafe extern void Destroy(ConnectionActivationStateFinalized* self);
