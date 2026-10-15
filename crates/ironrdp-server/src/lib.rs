@@ -18,7 +18,9 @@ mod handler;
 pub mod heartbeat;
 #[cfg(feature = "helper")]
 mod helper;
+mod multitransport;
 mod rdpdr;
+mod rdpeai;
 mod rdpei;
 mod server;
 mod sound;
@@ -37,12 +39,13 @@ pub use gfx::{EgfxServerMessage, GfxDvcBridge, GfxServerFactory, GfxServerHandle
 pub use handler::{KeyboardEvent, MouseButton, MouseEvent, RdpServerInputHandler};
 #[cfg(feature = "helper")]
 pub use helper::TlsIdentityCtx;
-pub use ironrdp_acceptor::Acceptor;
+pub use ironrdp_acceptor::{Acceptor, CredentialOrigin, ReceivedCredentials};
 pub use ironrdp_pdu::rdp::server_error_info::ErrorInfo;
 pub use ironrdp_pdu::rdp::session_info::ServerAutoReconnect;
 #[cfg(feature = "usb")]
 pub use ironrdp_rdpeusb::io::{CompletionData, DeviceAnnounce, DeviceText, InternalIoControlPacket};
 pub use rdpdr::{NoopRdpdrServerBackend, RdpdrServerBackend, RdpdrServerFactory, RdpdrServerMessage};
+pub use rdpeai::{NoopRdpeaiServerBackend, RdpeaiServerBackend, RdpeaiServerFactory, RdpeaiServerMessage};
 pub use rdpei::{
     CsReadyFlags, CsReadyPdu, DismissHoveringTouchContactPdu, PenContact, PenContactDataFlags, PenContactFields,
     PenContactFlags, PenEventPdu, PenFlags, PenFrame, RdpInputProtocolVersion, RdpeiHandler, RdpeiServer,
@@ -50,10 +53,10 @@ pub use rdpei::{
     TouchEventPdu, TouchFrame,
 };
 pub use server::{
-    AutoReconnectCookieHandle, ConnectionHandler, ConnectionInfo, CredentialDecision, CredentialValidationError,
-    CredentialValidator, Credentials, ErrorInfoDisconnectHandle, ExactMatchCredentialValidator, PostConnectionAction,
-    RdpServer, RdpServerOptions, RdpServerSecurity, ServerEvent, ServerEventSender, StaticChannelFactory, TransportTls,
-    pick_remotefx_entropy_coder,
+    AutoReconnectCookieHandle, BoundConnection, ConnectionBinder, ConnectionHandler, ConnectionInfo, ConnectionPolicy,
+    CredentialDecision, CredentialValidationError, CredentialValidator, Credentials, ErrorInfoDisconnectHandle,
+    ExactMatchCredentialValidator, PostConnectionAction, RdpServer, RdpServerOptions, RdpServerSecurity, ServerEvent,
+    ServerEventSender, StaticChannelFactory, TransportTls, pick_remotefx_entropy_coder,
 };
 pub use sound::{RdpsndServerHandler, RdpsndServerMessage, SoundServerFactory};
 #[cfg(feature = "usb")]

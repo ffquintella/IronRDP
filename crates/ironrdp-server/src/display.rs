@@ -335,6 +335,39 @@ pub trait RdpServerDisplay: Send {
     fn request_layout(&mut self, layout: DisplayControlMonitorLayout) {
         debug!(?layout, "Requesting layout")
     }
+
+    /// The maximum number of monitors this display will honor in a client's
+    /// `request_layout()` call for the rest of the session.
+    ///
+    /// This is a capacity ceiling (MS-RDPEDISP `MaxNumMonitors`), not a report
+    /// of the current topology: the client may request any layout up to this
+    /// many monitors, and it is validated against this number, not the other
+    /// way around. Called once, before the Display Control Virtual Channel
+    /// opens, to build the capabilities the server advertises; the display's
+    /// actual monitor count may later grow or shrink within that ceiling
+    /// without a way to advertise a new one mid-session. Defaults to `1`,
+    /// matching every existing implementation's current behavior.
+    async fn monitor_count(&mut self) -> u32 {
+        1
+    }
+
+    /// Whether to offer the Display Control Virtual Channel (MS-RDPEDISP) on
+    /// this connection.
+    ///
+    /// Called once per connection, before the dynamic channels are set up.
+    /// Return `false` when the display cannot honor a client layout request,
+    /// for example when it mirrors a fixed-size physical screen: MS-RDPEDISP
+    /// section 1.3 defines no reject message, so a client that sent a layout
+    /// the server cannot apply just waits for a reconfiguration that never
+    /// comes. Defaults to `true`, matching every existing implementation.
+    ///
+    /// A connection binder installs its own display during the capability
+    /// exchange, after this is asked. The display given to
+    /// `with_display_handler` therefore decides for every connection, and a
+    /// display installed by a binder can't withdraw the offer.
+    async fn offers_display_control(&mut self) -> bool {
+        true
+    }
 }
 
 #[cfg(test)]

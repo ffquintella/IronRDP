@@ -11,6 +11,9 @@ use ironrdp_propertyset::PropertySet;
 use ironrdp_rail::pdu::ExecutePdu;
 use url::Url;
 
+/// RDP-UDP protocol version, as offered with [`ConfigBuilder::with_udp_offer_version`].
+#[cfg(feature = "udp")]
+pub use ironrdp_rdpeudp::pdu::UdpVersion;
 #[cfg(feature = "vmconnect")]
 pub use ironrdp_vmconnect::Mode as VmConnectMode;
 
@@ -91,6 +94,10 @@ pub struct Config {
     pub(crate) connector: ironrdp_connector::Config,
     pub(crate) destination: Destination,
     pub(crate) transport: Transport,
+    #[cfg(feature = "udp")]
+    pub(crate) udp_transport_enabled: bool,
+    #[cfg(feature = "udp")]
+    pub(crate) udp_offer_version: UdpVersion,
     pub(crate) certificate_validation: ironrdp_tls::CertificateValidation,
     pub(crate) certificate_validation_callback: Option<ironrdp_tls::CertificateValidationCallback>,
 
@@ -102,6 +109,8 @@ pub struct Config {
     #[cfg(all(windows, feature = "vmconnect"))]
     pub(crate) vmconnect_current_user: bool,
     pub(crate) kerberos_config: Option<ironrdp_connector::credssp::KerberosConfig>,
+    pub(crate) input_send_interval: Option<Duration>,
+    pub(crate) input_keepalive_interval: Option<Duration>,
     pub(crate) fake_events_interval: Option<Duration>,
     pub(crate) channels: ChannelConfig,
     pub(crate) administrative_session: bool,
@@ -154,6 +163,18 @@ impl Config {
         &self.transport
     }
 
+    /// Whether reliable RDP-UDP2 is enabled for eligible direct connections.
+    #[cfg(feature = "udp")]
+    pub fn udp_transport_enabled(&self) -> bool {
+        self.udp_transport_enabled
+    }
+
+    /// Highest RDP-UDP protocol version offered in the SYN of the UDP handshake.
+    #[cfg(feature = "udp")]
+    pub fn udp_offer_version(&self) -> UdpVersion {
+        self.udp_offer_version
+    }
+
     /// TLS peer-certificate validation policy.
     pub fn certificate_validation(&self) -> ironrdp_tls::CertificateValidation {
         self.certificate_validation
@@ -193,6 +214,16 @@ impl Config {
     /// Optional Kerberos/KDC proxy configuration.
     pub fn kerberos_config(&self) -> Option<&ironrdp_connector::credssp::KerberosConfig> {
         self.kerberos_config.as_ref()
+    }
+
+    /// Minimum interval between non-forced input batches.
+    pub fn input_send_interval(&self) -> Option<Duration> {
+        self.input_send_interval
+    }
+
+    /// Interval between synthetic input keepalive events.
+    pub fn input_keepalive_interval(&self) -> Option<Duration> {
+        self.input_keepalive_interval
     }
 
     /// Idle anti-lock fake-events interval, if enabled.
@@ -251,6 +282,10 @@ impl fmt::Debug for Config {
         s.field("connector", &self.connector);
         s.field("destination", &self.destination);
         s.field("transport", &self.transport);
+        #[cfg(feature = "udp")]
+        s.field("udp_transport_enabled", &self.udp_transport_enabled);
+        #[cfg(feature = "udp")]
+        s.field("udp_offer_version", &self.udp_offer_version);
         s.field("certificate_validation", &self.certificate_validation);
         s.field(
             "certificate_validation_callback",
@@ -269,6 +304,8 @@ impl fmt::Debug for Config {
             );
         }
         s.field("kerberos_config", &self.kerberos_config);
+        s.field("input_send_interval", &self.input_send_interval);
+        s.field("input_keepalive_interval", &self.input_keepalive_interval);
         s.field("fake_events_interval", &self.fake_events_interval);
         s.field("channels", &self.channels);
         s.field("administrative_session", &self.administrative_session);
@@ -758,6 +795,11 @@ pub struct ConfigBuilder {
     rail_client_status_flags: Option<u32>,
 
     transport: TransportKind,
+    #[cfg(feature = "udp")]
+    udp_transport_enabled: bool,
+    #[cfg(feature = "udp")]
+    udp_offer_version: Option<UdpVersion>,
+    graphics_pipeline: bool,
     #[cfg(feature = "vmconnect")]
     vm_id: Option<String>,
     #[cfg(feature = "vmconnect")]
@@ -766,6 +808,8 @@ pub struct ConfigBuilder {
     vmconnect_current_user: bool,
     rdcleanpath_token: Option<String>,
     kerberos_config: Option<ironrdp_connector::credssp::KerberosConfig>,
+    input_send_interval: Option<Duration>,
+    input_keepalive_interval: Option<Duration>,
     fake_events_interval: Option<Duration>,
     channels: ChannelConfig,
     #[cfg(any(feature = "sound", feature = "rdpdr"))]
@@ -1242,6 +1286,41 @@ impl ConfigBuilder {
         self
     }
 
+    /// Enables reliable RDP-UDP2 for eligible direct connections.
+    ///
+    /// Unsupported carriers remain TCP-only, and a failed UDP bootstrap falls
+    /// back to the main TCP connection.
+    #[cfg(feature = "udp")]
+    #[must_use]
+    pub fn with_udp_transport(mut self, enabled: bool) -> Self {
+        self.udp_transport_enabled = enabled;
+        self
+    }
+
+    /// Selects the highest RDP-UDP protocol version the UDP handshake offers.
+    ///
+    /// The default, [`UdpVersion::V3`], offers MS-RDPEUDP2 and lets the server settle on a
+    /// lower version. Offering [`UdpVersion::V2`] or [`UdpVersion::V1`] asks for MS-RDPEUDP
+    /// outright, which is what Windows servers that do not implement version 3 answer.
+    #[cfg(feature = "udp")]
+    #[must_use]
+    pub fn with_udp_offer_version(mut self, version: UdpVersion) -> Self {
+        self.udp_offer_version = Some(version);
+        self
+    }
+
+    /// Advertises the graphics pipeline ([MS-RDPEGFX]) to the server. Off by default.
+    ///
+    /// Without it, the server keeps graphics on the legacy bitmap path, which travels on the
+    /// main connection and cannot move to a reliable UDP tunnel.
+    ///
+    /// [MS-RDPEGFX]: https://learn.microsoft.com/en-us/openspecs/windows_protocols/ms-rdpegfx/
+    #[must_use]
+    pub fn with_graphics_pipeline(mut self, enabled: bool) -> Self {
+        self.graphics_pipeline = enabled;
+        self
+    }
+
     /// Connect to a Hyper-V VM console by VM GUID. Destination must use port
     /// [`ironrdp_vmconnect::PORT`] (2179) unless the caller explicitly selects another port.
     /// A destination with no explicit port defaults to 2179 instead of the ordinary RDP port.
@@ -1307,6 +1386,26 @@ impl ConfigBuilder {
             self.properties.clear_kdc_proxy_url();
         }
         self.kerberos_config = Some(cfg);
+        self
+    }
+
+    /// Set the minimum interval between non-forced input batches.
+    ///
+    /// Mouse movement is batched until this interval elapses.
+    /// Keyboard, button, wheel, synchronization, and QoE events remain immediate.
+    #[must_use]
+    pub fn with_input_send_interval(mut self, interval: Duration) -> Self {
+        self.input_send_interval = Some(interval);
+        self
+    }
+
+    /// Set the interval between synthetic input keepalive events.
+    ///
+    /// Unlike [`with_fake_events_interval`](Self::with_fake_events_interval), this does not write the minute-based `ironrdp_fakeeventsinterval` compatibility property.
+    /// When both intervals are configured, the shorter interval controls synthetic input.
+    #[must_use]
+    pub fn with_input_keepalive_interval(mut self, interval: Duration) -> Self {
+        self.input_keepalive_interval = Some(interval);
         self
     }
 
@@ -1888,7 +1987,7 @@ impl ConfigBuilder {
             request_data: None,
             pointer_software_rendering: self.pointer_software_rendering.unwrap_or(false),
             multitransport_flags: None,
-            support_dyn_vc_gfx_protocol: false,
+            support_dyn_vc_gfx_protocol: self.graphics_pipeline,
             compression_type,
             performance_flags: self.performance_flags.unwrap_or_default(),
             timezone_info: TimezoneInfo::default(),
@@ -1921,6 +2020,10 @@ impl ConfigBuilder {
             connector,
             destination: self.destination.context("server address is required")?,
             transport,
+            #[cfg(feature = "udp")]
+            udp_transport_enabled: self.udp_transport_enabled,
+            #[cfg(feature = "udp")]
+            udp_offer_version: self.udp_offer_version.unwrap_or(UdpVersion::V3),
             certificate_validation,
             certificate_validation_callback: self.certificate_validation_callback,
             #[cfg(feature = "vmconnect")]
@@ -1930,6 +2033,8 @@ impl ConfigBuilder {
             #[cfg(all(windows, feature = "vmconnect"))]
             vmconnect_current_user: self.vmconnect_current_user,
             kerberos_config,
+            input_send_interval: self.input_send_interval,
+            input_keepalive_interval: self.input_keepalive_interval,
             fake_events_interval: self.fake_events_interval,
             channels: self.channels,
             administrative_session: self.administrative_session,
@@ -2051,6 +2156,15 @@ impl ConfigBuilder {
         }
         if let Some(minutes) = ps.fake_events_interval() {
             self.fake_events_interval = Some(Duration::from_secs(u64::from(minutes) * 60));
+        }
+        if let Some(milliseconds) = ps.get::<u32>("mininputsendinterval") {
+            if milliseconds > 2_000 {
+                anyhow::bail!("invalid minimum input send interval: valid values are 0 through 2000 milliseconds");
+            }
+            self.input_send_interval = Some(Duration::from_millis(u64::from(milliseconds)));
+        }
+        if let Some(seconds) = ps.get::<u32>("keepaliveinterval") {
+            self.input_keepalive_interval = (seconds != 0).then(|| Duration::from_secs(u64::from(seconds)));
         }
         if let Some(level) = ps.compression_level() {
             self.compression_type = Some(compression_type_from_level(level)?);
@@ -2316,6 +2430,8 @@ fn kerberos_config_from_properties(
 
 #[cfg(test)]
 mod tests {
+    use core::time::Duration;
+
     use ironrdp_cfg::PropertySetExt as _;
     use ironrdp_pdu::rdp::capability_sets::MajorPlatformType;
 
@@ -2347,6 +2463,34 @@ mod tests {
             .build()
             .expect("terminator-only load-balance info clears the token");
         assert!(cleared.load_balance_info().is_none());
+    }
+
+    #[test]
+    fn input_timing_configuration_preserves_subminute_precision() {
+        let config = complete_builder()
+            .with_input_send_interval(Duration::from_millis(100))
+            .with_input_keepalive_interval(Duration::from_secs(5))
+            .build()
+            .expect("valid input timing configuration");
+
+        assert_eq!(config.input_send_interval(), Some(Duration::from_millis(100)));
+        assert_eq!(config.input_keepalive_interval(), Some(Duration::from_secs(5)));
+        assert_eq!(config.fake_events_interval(), None);
+        assert_eq!(config.properties.get::<u32>("ironrdp_fakeeventsinterval"), None);
+
+        let mut properties = ironrdp_propertyset::PropertySet::new();
+        properties.insert("mininputsendinterval", 2_000u32);
+        properties.insert("keepaliveinterval", 30u32);
+        let config = complete_builder()
+            .with_property_set(&properties)
+            .expect("valid input timing properties")
+            .build()
+            .expect("valid input timing configuration");
+        assert_eq!(config.input_send_interval(), Some(Duration::from_secs(2)));
+        assert_eq!(config.input_keepalive_interval(), Some(Duration::from_secs(30)));
+
+        properties.insert("mininputsendinterval", 2_001u32);
+        assert!(complete_builder().with_property_set(&properties).is_err());
     }
 
     #[cfg(any(feature = "sound", feature = "rdpdr"))]
