@@ -268,14 +268,7 @@ fn extract_user_principal_name(cert: &Certificate) -> Option<String> {
 }
 
 fn write_credssp_request(ts_request: credssp::TsRequest, output: &mut WriteBuf) -> ConnectorResult<usize> {
-    // sspi 0.21.4 made `buffer_len` fallible; propagate rather than
-    // unwrap, so a malformed TsRequest surfaces as a connector error
-    // instead of a panic mid-handshake.
-    let length = usize::from(
-        ts_request
-            .buffer_len()
-            .map_err(|e| custom_err!("TsRequest buffer_len", e))?,
-    );
+    let length = usize::from(ts_request.buffer_len().map_err(|e| custom_err!("TsRequest", e))?);
 
     let unfilled_buffer = output.unfilled_to(length);
 
